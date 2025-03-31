@@ -539,11 +539,3 @@ When you send invitation emails:
 
 Total implementation time: About 1.5-2 hours
 ```
-
-trackOpenedSummaryView: (summaryType: string) => {
- trackEvent('OpenedSummaryView', { summaryType });
-},
-
-trackUserLeftAppMidway: (decisionType: string) => {
- trackEvent('UserLeftAppMidway', { decisionType });
-}
