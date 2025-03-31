@@ -1,4 +1,4 @@
-# TwoBrains.ai Mixpanel Analytics
+# TwoBrains.ai Mixpanel Analytics (March 2025)
 
 A robust, production-ready Mixpanel implementation for tracking user behavior in the TwoBrains.ai decision-making application.
 
@@ -214,10 +214,6 @@ For optimal analysis in Mixpanel:
    - AI Interaction events
    - Feedback events
 
-## Contact
-
-For questions or support, please contact the development team.
-
 ## Developer Implementation Guide
 
 As a developer implementing this Mixpanel analytics, here are the specific steps to take:
@@ -337,3 +333,217 @@ Once everything is working correctly:
    ```javascript
    const MIXPANEL_TOKEN = process.env.REACT_APP_MIXPANEL_TOKEN || import.meta.env.VITE_MIXPANEL_TOKEN;
    ```
+
+   **************************
+
+# Adding New Tracking Features (March 31, 2025)
+
+## What We're Adding
+
+1. Time between sessions tracking
+2. Pros and cons generation tracking
+3. Decision completion tracking
+4. Abandoned discussion tracking
+5. Summary view tracking 
+6. Mid-session exit tracking
+7. Cohort analysis (for tracking different groups of users)
+
+## Step-by-Step Instructions
+
+### Step 1: Add New Functions to Your Mixpanel File (15 minutes)
+
+Open your `src/utils/mixpanel.ts` file and add these new functions:
+
+```typescript
+// Add this to your SessionEvents object
+trackTimeBetweenSessions: (timeSinceLastSession: number) => {
+  trackEvent('TimeBetweenSessions', { timeSinceLastSession });
+}
+
+// Add these to your DecisionEvents object
+trackProsAndConsGenerated: (aiModels: string[], generationTime: number) => {
+  trackEvent('ProsAndConsGenerated', { aiModels, generationTime });
+},
+
+trackAbandonedDiscussion: (decisionType: string) => {
+  trackEvent('AbandonedDiscussion', { decisionType });
+},
+
+trackOpenedSummaryView: (summaryType: string) => {
+  trackEvent('OpenedSummaryView', { summaryType });
+},
+
+trackUserLeftAppMidway: (decisionType: string) => {
+  trackEvent('UserLeftAppMidway', { decisionType });
+}
+```
+
+### Step 2: Update Session Tracking (20 minutes)
+
+Find where you initialize your app (likely in App.jsx). Update your session tracking code:
+
+```javascript
+// Find this part:
+const userType = localStorage.getItem('user_id') ? 'Authenticated' : 'Guest';
+SessionEvents.trackSessionStart(userType);
+
+// Change it to this (notice we added cohort tracking):
+const userType = localStorage.getItem('user_id') ? 'Authenticated' : 'Guest';
+const cohort = localStorage.getItem('user_cohort') || 'organic';
+SessionEvents.trackSessionStart(userType, cohort);
+
+// Add this code for time between sessions (after the above code):
+const startTime = Date.now();
+const lastSessionEnd = localStorage.getItem('last_session_end');
+if (lastSessionEnd) {
+  const timeBetweenSessions = startTime - parseInt(lastSessionEnd);
+  SessionEvents.trackTimeBetweenSessions(timeBetweenSessions);
+}
+
+// Find your session end handler:
+const handleUnload = () => {
+  SessionEvents.trackSessionEnd(startTime, window.history.length);
+};
+
+// Replace it with this (to track abandoned decisions):
+const handleUnload = () => {
+  // Track normal session end
+  SessionEvents.trackSessionEnd(startTime, window.history.length);
+  
+  // Save session end time
+  localStorage.setItem('last_session_end', Date.now().toString());
+  
+  // Check if user left in the middle of a decision
+  const activeDecision = localStorage.getItem('active_decision');
+  if (activeDecision) {
+    DecisionEvents.trackAbandonedDiscussion(activeDecision);
+    DecisionEvents.trackUserLeftAppMidway(activeDecision);
+  }
+};
+```
+
+### Step 3: Update Decision Tracking (30 minutes)
+
+Find the places in your code where users start and complete decisions (usually button click handlers). Update them like this:
+
+```javascript
+// When a user starts a decision:
+function handleStartDecision(decisionType) {
+  // Save what decision the user is working on
+  localStorage.setItem('active_decision', decisionType);
+  
+  // Track that they started
+  DecisionEvents.trackDiscussionStart(decisionType);
+  
+  // Your existing code...
+}
+
+// When pros and cons are generated:
+function handleProsConsGenerated(aiModels) {
+  // Calculate how long it took
+  const generationTime = Date.now() - startTime; // startTime should be defined when the request begins
+  
+  // Track the event
+  DecisionEvents.trackProsAndConsGenerated(aiModels, generationTime);
+  
+  // Your existing code...
+}
+
+// When a user completes a decision:
+function handleCompleteDecision(decisionType, wasHelpful) {
+  // Calculate how long it took
+  const timeToComplete = Date.now() - startTime; // startTime from when they started the decision
+  
+  // They're done, so remove the active decision marker
+  localStorage.removeItem('active_decision');
+  
+  // Track completion
+  DecisionEvents.trackDecisionComplete(decisionType, timeToComplete, wasHelpful);
+  
+  // Your existing code...
+}
+
+// When a user views the summary:
+function handleViewSummary(summaryType) {
+  DecisionEvents.trackOpenedSummaryView(summaryType);
+  
+  // Your existing code...
+}
+```
+
+### Step 4: Add Cohort Tracking (15 minutes)
+
+Add this code to your login/signup handler:
+
+```javascript
+function handleUserLogin(userId, userInfo) {
+  // Check for cohort in URL (e.g., from email invites)
+  const urlParams = new URLSearchParams(window.location.search);
+  const cohort = urlParams.get('cohort');
+  
+  // Save cohort if it's in the URL
+  if (cohort) {
+    localStorage.setItem('user_cohort', cohort);
+  }
+  
+  // Use saved cohort or default to "organic"
+  const userCohort = localStorage.getItem('user_cohort') || 'organic';
+  
+  // Identify user with their cohort
+  identifyUser(userId, {
+    email: userInfo.email,
+    name: userInfo.name,
+    cohort: userCohort
+  });
+  
+  // Your existing code...
+}
+```
+
+### Step 5: Update Function Signatures (10 minutes)
+
+If you're using TypeScript, you need to update the function signatures too:
+
+```typescript
+// Find the SessionEvents.trackSessionStart function and change it from:
+trackSessionStart: (userType: string) => {
+  trackEvent('SessionStarted', { userType });
+}
+
+// To this:
+trackSessionStart: (userType: string, cohort: string = 'organic') => {
+  trackEvent('SessionStarted', { userType, cohort });
+}
+
+// Update Decision Event parameters too (if needed)
+trackDecisionComplete: (decisionType: string, timeToComplete: number, wasHelpful: boolean) => {
+  trackEvent('DecisionCompleted', { decisionType, timeToComplete, wasHelpful });
+}
+```
+
+## How to Set Up Cohort Tracking for Emails (5 minutes)
+
+When you send invitation emails:
+
+1. Add `?cohort=alpha1` (or whatever name you want) to the end of your website links in the email
+2. For example: `https://twobrains.ai/register?cohort=alpha1`
+3. Each new batch of invites should use a different cohort name (alpha1, alpha2, beta1, etc.)
+
+## Testing Your Implementation (15 minutes)
+
+1. Open your website in a browser with dev tools open
+2. Try starting and completing a decision
+3. Check the console logs for tracking events
+4. Check Mixpanel to see if events show up
+5. Test an invite link with a cohort parameter to see if it tracks properly
+
+Total implementation time: About 1.5-2 hours
+```
+
+trackOpenedSummaryView: (summaryType: string) => {
+ trackEvent('OpenedSummaryView', { summaryType });
+},
+
+trackUserLeftAppMidway: (decisionType: string) => {
+ trackEvent('UserLeftAppMidway', { decisionType });
+}
